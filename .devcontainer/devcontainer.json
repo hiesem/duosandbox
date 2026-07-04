@@ -1,0 +1,41 @@
+{
+  "name": "DuoSandbox",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "NODE_VERSION": "20",
+      "INSTALL_CODEX": "false",
+      "INSTALL_GEMINI": "false"
+    }
+  },
+  // Required so init-firewall.sh can configure iptables/ipset inside the container.
+  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    // Extend the egress allowlist without editing init-firewall.sh.
+    // Space/comma separated, e.g. "api.openai.com,generativelanguage.googleapis.com".
+    "EXTRA_ALLOWED_DOMAINS": "",
+    // Set to "false" to skip fetching GitHub IP ranges at startup.
+    "ALLOW_GITHUB": "true"
+  },
+  "customizations": {
+    "vscode": {
+      // Language-agnostic on purpose: only the Claude Code extension.
+      // Add your own (python, go, rust, prettier, ...) per project.
+      "extensions": ["anthropic.claude-code"]
+    }
+  },
+  "remoteUser": "node",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
+  "mounts": [
+    // Shared across every project so you log in to Claude once.
+    // Append -${devcontainerId} to the source name if you want per-project auth instead.
+    "source=duosandbox-claude-config,target=/home/node/.claude,type=volume"
+  ],
+  // Re-apply the firewall on every start, before you use the container.
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+  "waitFor": "postStartCommand"
+}
