@@ -1,54 +1,70 @@
 # DuoSandbox (drop-in dev container)
 
-A minimal, language-agnostic VS Code dev container that runs **Claude Code** (and,
-optionally, other LLM coding CLIs) inside a **default-deny network sandbox**. Drop it
-into any project and "Reopen in Container" — nothing else in the repo is assumed.
+A minimal, hardened VS Code dev container that gives an AI coding agent (or any
+tool) **full internet access but no access to your machine**. Drop the
+`.devcontainer/` folder into any project and "Reopen in Container": the agent can
+freely edit the mounted project and reach any server online, while your home
+directory, SSH keys, other repos, and OS files stay invisible to it.
+
+## Threat model
+
+- ✅ **Network: fully open.** The agent can call any API / server on the internet.
+  No firewall, no allowlist, no special capabilities.
+- ✅ **Filesystem: isolated.** Only the current project is mounted (`/workspace`).
+  Nothing else on your machine is visible, so the agent can't read or delete it.
+- ✅ **Host: protected against accidents.** Runs as a non-root user with all Linux
+  capabilities dropped, `no-new-privileges`, a PID limit (an accidental fork bomb
+  can't exhaust the host), and `--init` for clean process reaping.
+
+This defends against **accidents** — a stray `rm -rf`, a runaway script. It is a
+shared-kernel container, not a VM, so it is not a hard boundary against
+*deliberately* malicious code (see Caveats).
 
 ## What's in the box
 
 | File | Role |
 |------|------|
-| `.devcontainer/Dockerfile` | `node:20-slim` + only the firewall toolchain + the LLM CLIs |
-| `.devcontainer/devcontainer.json` | caps, workspace mount, config volume, runs the firewall on start |
-| `.devcontainer/init-firewall.sh` | iptables + ipset egress allowlist (default-deny) |
-
-The network sandbox is the whole point: outbound traffic is **dropped by default**,
-and only an allowlist can get out — Anthropic's API + login (the `160.79.104.0/23`
-range that covers `api.anthropic.com`, `claude.ai`, and `platform.claude.com`), npm,
-GitHub, plus anything you add.
+| `.devcontainer/Dockerfile` | `node:20-slim` + git. No LLM baked in. |
+| `.devcontainer/devcontainer.json` | project-only mount, hardening flags, non-root |
 
 ## Use it
 
-1. Copy the `.devcontainer/` folder into the root of any project.
-2. In VS Code: **Command Palette → Dev Containers: Reopen in Container**.
-3. On first start the firewall configures itself, then you `claude` in the terminal.
-   (Auth persists across rebuilds via a shared named volume.)
+1. Copy `.devcontainer/` into the root of any project.
+2. VS Code: **Command Palette → Dev Containers: Reopen in Container**.
+3. Install/run whatever LLM CLI you want (below), or add a VS Code extension.
 
-## Customize
+## Add an LLM
 
-- **Allow more domains** (private registry, another provider, an API your code calls):
-  set `EXTRA_ALLOWED_DOMAINS` in `devcontainer.json`, e.g.
-  `"EXTRA_ALLOWED_DOMAINS": "api.openai.com,generativelanguage.googleapis.com"`,
-  or drop a `.devcontainer/allowed-domains.txt` (one host per line) into the project.
-  Entries may be hostnames **or raw IPs/CIDRs** (e.g. `10.0.0.0/8`). No need to edit
-  the firewall script.
-- **Add other LLM CLIs**: flip `INSTALL_CODEX` / `INSTALL_GEMINI` to `"true"` in the
-  build args (adjust the package names in the Dockerfile to the CLIs you want), and
-  add their API domains to the allowlist as above.
-- **Skip GitHub ranges**: set `ALLOW_GITHUB` to `"false"` for a smaller, faster start.
-- **Per-project auth** instead of shared: append `-${devcontainerId}` to the volume
-  `source` name in `devcontainer.json`.
+Nothing ships in the image by default — pick your tool:
 
-## Security caveat
+- **At runtime** (quickest): in the container terminal,
+  `npm i -g @anthropic-ai/claude-code` (or `@openai/codex`, `@google/gemini-cli`),
+  then run it. Login/config persists via the `duosandbox-config` volume.
+- **At build time**: set `INSTALL_CLAUDE` / `INSTALL_CODEX` / `INSTALL_GEMINI` to
+  `"true"` in the `devcontainer.json` build args and rebuild.
+- **VS Code extension**: add `"anthropic.claude-code"` to
+  `customizations.vscode.extensions`.
 
-Container-level isolation shares the host kernel, and with
-`--dangerously-skip-permissions` a malicious repo can still exfiltrate anything the
-container can reach — including the mounted `~/.claude` credentials. Keep the
-allowlist narrow, don't mount SSH/cloud creds, and prefer trusted repos + scoped
-tokens. For a harder boundary, run under a microVM (Docker Sandboxes) or add gVisor
-(`--runtime=runsc`).
+Python-based tools (e.g. `aider`) need Python added to the Dockerfile.
+
+## Tuning
+
+- **Resource caps**: uncomment `--memory` / `--cpus` in `runArgs` to bound host
+  resource use.
+- **If something needs a capability** (rare for a non-root editor), relax
+  `--cap-drop=ALL`.
+
+## Caveats
+
+- **Shared kernel**: strong against accidents, not a guarantee against a determined
+  exploit. For genuinely untrusted code, use a microVM (e.g. Docker Sandboxes).
+- **The workspace is real**: writes to `/workspace` hit your actual project on disk,
+  so the agent *can* mangle or fill the repo it's working in — that's by design.
+  Use git so you can roll back.
+- **Only what you mount is reachable**: don't add extra host mounts or the Docker
+  socket unless you intend the agent to reach them.
 
 ## License
 
-[MIT](LICENSE). Derived from Anthropic's MIT-licensed
+[MIT](LICENSE). Originally derived from Anthropic's
 [Claude Code reference dev container](https://github.com/anthropics/claude-code/tree/main/.devcontainer).
