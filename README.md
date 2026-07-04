@@ -13,7 +13,9 @@ into any project and "Reopen in Container" — nothing else in the repo is assum
 | `.devcontainer/init-firewall.sh` | iptables + ipset egress allowlist (default-deny) |
 
 The network sandbox is the whole point: outbound traffic is **dropped by default**,
-and only an allowlist (Anthropic API, npm, GitHub, plus anything you add) can get out.
+and only an allowlist can get out — Anthropic's API + login (the `160.79.104.0/23`
+range that covers `api.anthropic.com`, `claude.ai`, and `platform.claude.com`), npm,
+GitHub, plus anything you add.
 
 ## Use it
 
@@ -28,7 +30,8 @@ and only an allowlist (Anthropic API, npm, GitHub, plus anything you add) can ge
   set `EXTRA_ALLOWED_DOMAINS` in `devcontainer.json`, e.g.
   `"EXTRA_ALLOWED_DOMAINS": "api.openai.com,generativelanguage.googleapis.com"`,
   or drop a `.devcontainer/allowed-domains.txt` (one host per line) into the project.
-  No need to edit the firewall script.
+  Entries may be hostnames **or raw IPs/CIDRs** (e.g. `10.0.0.0/8`). No need to edit
+  the firewall script.
 - **Add other LLM CLIs**: flip `INSTALL_CODEX` / `INSTALL_GEMINI` to `"true"` in the
   build args (adjust the package names in the Dockerfile to the CLIs you want), and
   add their API domains to the allowlist as above.

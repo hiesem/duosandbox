@@ -64,6 +64,17 @@ if [ "${ALLOW_GITHUB:-true}" = "true" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Anthropic's published inbound IP range. api.anthropic.com, claude.ai,
+# platform.claude.com and downloads.claude.ai all live in this /23, and their
+# individual IPs rotate within it -- so allowlisting the whole CIDR is what
+# makes Claude API calls AND Claude.ai subscription login work reliably
+# (pinning a single resolved IP does not). See:
+# https://platform.claude.com/docs/en/api/ip-addresses
+# ---------------------------------------------------------------------------
+echo "Adding Anthropic IP range 160.79.104.0/23"
+ipset add --exist allowed-domains 160.79.104.0/23
+
+# ---------------------------------------------------------------------------
 # Domain allowlist. BASE_DOMAINS covers Claude Code + npm. Extend WITHOUT
 # editing this file via either:
 #   - the EXTRA_ALLOWED_DOMAINS env var (space/comma/newline separated), or
@@ -90,6 +101,12 @@ IFS=$' ,\n\t' read -r -a domain_list \
 
 for domain in "${domain_list[@]}"; do
     [ -z "$domain" ] && continue
+    # Raw IPs / CIDRs (e.g. 160.79.104.0/23) are added directly -- no DNS lookup.
+    if [[ "$domain" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]]; then
+        echo "Adding CIDR/IP $domain"
+        ipset add --exist allowed-domains "$domain"
+        continue
+    fi
     echo "Resolving $domain..."
     ips=""
     for attempt in 1 2 3; do
